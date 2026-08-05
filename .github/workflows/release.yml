@@ -83,7 +83,7 @@ jobs:
           tar xzf "${{ steps.package.outputs.archive }}" -C /tmp
           "/tmp/lolt-${{ matrix.name }}/lolt" --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lolt-${{ matrix.name }}
           path: |
@@ -271,7 +271,7 @@ jobs:
         run: |
           echo "::warning::Published unsigned (ad-hoc). Users must right-click → Open, or run 'xattr -dr com.apple.quarantine /Applications/Lolt.app'. Add the MACOS_* secrets to sign and notarize — see macos/README.md."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: lolt-macos-app
           path: |
