@@ -145,10 +145,14 @@ container app and hitting Refresh, which calls
 ## Note on verification
 
 The Rust core, the C ABI and the JSON contract are tested: the FFI is exercised
-by a C harness against the real API, and the Swift structs are checked
-field-by-field against live payloads. The Swift/SwiftUI code itself has not been
-compiled — it was written on Linux, where no Swift toolchain or Xcode exists.
-Expect to fix the odd compile error on first build.
+by a C harness against the real API, and `cargo test` checks these Swift structs
+field-by-field against serialised payloads (see `../tests/contract.rs`).
+
+The Swift and SwiftUI code itself was written on Linux, where no Swift toolchain
+or Xcode exists, so it was never compiled locally. The `Widget (Xcode)` job in
+[`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) is what actually
+compiles it — push the branch and read that job's log, which is the fastest way
+to find the first round of compile errors.
 
 Team logos are deliberately not shown: the API serves them over plain `http`,
 which App Transport Security blocks, and WidgetKit can't load images

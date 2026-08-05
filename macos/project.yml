@@ -50,6 +50,17 @@ settings:
     # ../target. The Rust build phase needs this off.
     ENABLE_USER_SCRIPT_SANDBOXING: NO
 
+schemes:
+  Lolt:
+    build:
+      targets:
+        Lolt: all
+        LoltWidget: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
 targets:
   Lolt:
     type: application

@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes an in-flight run on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rustfmt and clippy
+        run: rustup component add rustfmt clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      # Includes tests/contract.rs, which checks the Swift widget's Codable
+      # structs against the payload the core emits. No test touches the network.
+      - name: Tests
+        run: cargo test --all-targets
+
+      - name: Build
+        run: cargo build --release
+
+      - name: CLI smoke
+        run: |
+          ./target/release/lolt --help
+          ./target/release/lolt --version
+
+  ffi:
+    name: C ABI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            libs: -lpthread -ldl -lm
+          # Must match OTHER_LDFLAGS in macos/project.yml. If this fails, the
+          # widget target cannot link either — fix both together.
+          - os: macos-latest
+            libs: -liconv -lc++ -framework Security -framework CoreFoundation -framework SystemConfiguration
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the static library
+        run: cargo build --release --lib
+
+      - name: Check the exported symbols survived
+        run: |
+          for symbol in lolt_snapshot_json lolt_string_free lolt_version; do
+            if nm -g target/release/liblolt_core.a 2>/dev/null | grep -Eq "T _?${symbol}$"; then
+              echo "found $symbol"
+            else
+              echo "::error file=src/ffi.rs::$symbol is not exported from liblolt_core.a"
+              exit 1
+            fi
+          done
+
+      - name: Link and run the smoke test
+        run: |
+          cc tests/ffi_smoke.c -o ffi_smoke -L target/release -llolt_core ${{ matrix.libs }}
+          ./ffi_smoke
+
+  widget:
+    name: Widget (Xcode)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: macos
+        run: xcodegen generate
+
+      # Compiles the Swift, resolves the bridging header and links
+      # liblolt_core.a for both the app and the widget extension. The Rust
+      # pre-build phase runs as part of this. Signing is off: CI has no
+      # certificate, and none is needed to type-check and link.
+      - name: Build app and widget extension
+        run: |
+          xcodebuild build \
+            -project macos/Lolt.xcodeproj \
+            -scheme Lolt \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""

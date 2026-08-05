@@ -111,9 +111,37 @@ affiliated with or endorsed by Riot Games.
 ## Development
 
 ```sh
-cargo test      # unit tests for matching, layout and time formatting
+cargo test      # unit tests, plus the Swift/Rust JSON contract
 cargo clippy --all-targets
 cargo fmt
+```
+
+No test touches the network — the API is only called by the commands
+themselves, so the suite is fast and offline.
+
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and
+pull request:
+
+| Job | Checks |
+| --- | --- |
+| **Rust** (Linux + macOS) | `cargo fmt --check`, `clippy -D warnings`, tests, release build |
+| **C ABI** (Linux + macOS) | The static library still exports the FFI symbols, and [`tests/ffi_smoke.c`](tests/ffi_smoke.c) links against it with the same flags the widget uses |
+| **Widget** (macOS) | `xcodegen` + `xcodebuild` compile the Swift and link the Rust core |
+
+[`tests/contract.rs`](tests/contract.rs) is the guard against the two halves
+drifting: it parses the widget's Swift `Codable` structs and checks them
+field-by-field against serialised payloads, including nullability and the exact
+date format `JSONDecoder.iso8601` accepts.
+
+Tagging `v*` triggers
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds a
+Linux x86-64 binary and a universal macOS binary, packages them with checksums,
+and publishes a GitHub release:
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
 ```
 
 Layout:
