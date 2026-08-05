@@ -91,9 +91,197 @@ jobs:
             lolt-${{ matrix.name }}.tar.gz.sha256
           if-no-files-found: error
 
+  macos-app:
+    name: macOS app and widget (.dmg)
+    runs-on: macos-latest
+    env:
+      # Secrets can't be read directly in `if:`, so gate on a plain env flag.
+      # With no certificate configured the app is still published, ad-hoc
+      # signed — installable, but Gatekeeper will warn on first open.
+      HAS_SIGNING: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_TEAM_ID != '' }}
+      HAS_NOTARIZATION: ${{ secrets.MACOS_CERTIFICATE != '' && secrets.MACOS_NOTARY_APPLE_ID != '' && secrets.MACOS_NOTARY_PASSWORD != '' }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        working-directory: macos
+        run: xcodegen generate
+
+      # A throwaway keychain keeps the certificate out of the login keychain
+      # and is discarded with the runner.
+      - name: Import the signing certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain_password="$(uuidgen)"
+          echo "$CERTIFICATE" | base64 --decode > /tmp/certificate.p12
+
+          security create-keychain -p "$keychain_password" build.keychain
+          security set-keychain-settings -lut 3600 build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$keychain_password" build.keychain
+          security import /tmp/certificate.p12 -k build.keychain \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" build.keychain >/dev/null
+          rm -f /tmp/certificate.p12
+
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning build.keychain
+
+      # One universal archive. ARCHS reaches scripts/build-rust.sh, so the Rust
+      # core is built for both slices and lipo'd before the link.
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          version="${TAG#v}"
+          common=(
+            -project macos/Lolt.xcodeproj
+            -scheme Lolt
+            -configuration Release
+            -archivePath "$RUNNER_TEMP/Lolt.xcarchive"
+            -destination 'generic/platform=macOS'
+            ARCHS="arm64 x86_64"
+            ONLY_ACTIVE_ARCH=NO
+            MARKETING_VERSION="$version"
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER:-1}"
+            ENABLE_HARDENED_RUNTIME=YES
+          )
+
+          if [ "$HAS_SIGNING" = "true" ]; then
+            xcodebuild archive "${common[@]}" \
+              CODE_SIGN_STYLE=Manual \
+              CODE_SIGN_IDENTITY="Developer ID Application" \
+              DEVELOPMENT_TEAM="$TEAM_ID"
+          else
+            xcodebuild archive "${common[@]}" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY=""
+          fi
+
+      - name: Export the app
+        env:
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+        run: |
+          archive="$RUNNER_TEMP/Lolt.xcarchive"
+          export_dir="$RUNNER_TEMP/export"
+          mkdir -p "$export_dir"
+
+          if [ "$HAS_SIGNING" = "true" ]; then
+            # Written with printf: a heredoc indented to match the YAML block
+            # would put whitespace before the XML declaration.
+            plist="$RUNNER_TEMP/ExportOptions.plist"
+            printf '%s\n' \
+              '<?xml version="1.0" encoding="UTF-8"?>' \
+              '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+              '<plist version="1.0">' \
+              '<dict>' \
+              '<key>method</key><string>developer-id</string>' \
+              "<key>teamID</key><string>${TEAM_ID}</string>" \
+              '<key>signingStyle</key><string>manual</string>' \
+              '</dict>' \
+              '</plist>' > "$plist"
+            plutil -lint "$plist"
+
+            xcodebuild -exportArchive \
+              -archivePath "$archive" \
+              -exportPath "$export_dir" \
+              -exportOptionsPlist "$plist"
+          else
+            # exportArchive needs a real identity, so take the app straight out
+            # of the archive and ad-hoc sign it. Nested code first, outermost
+            # bundle last — the order --deep gets wrong.
+            cp -R "$archive/Products/Applications/Lolt.app" "$export_dir/"
+            codesign --force --sign - --options runtime --timestamp=none \
+              "$export_dir/Lolt.app/Contents/PlugIns/LoltWidget.appex"
+            codesign --force --sign - --options runtime --timestamp=none \
+              "$export_dir/Lolt.app"
+          fi
+
+          ls -la "$export_dir"
+
+      - name: Check the app is universal and the widget is embedded
+        run: |
+          app="$RUNNER_TEMP/export/Lolt.app"
+          binary="$app/Contents/MacOS/Lolt"
+          extension="$app/Contents/PlugIns/LoltWidget.appex"
+
+          test -x "$binary" || { echo "::error::no app binary at $binary"; exit 1; }
+          test -d "$extension" || { echo "::error::the widget extension is missing from the bundle"; exit 1; }
+
+          echo "architectures: $(lipo -archs "$binary")"
+          for arch in arm64 x86_64; do
+            lipo -archs "$binary" | grep -qw "$arch" || {
+              echo "::error::the app binary is missing the $arch slice"; exit 1; }
+          done
+
+          codesign --verify --strict --verbose=2 "$app"
+
+      - name: Build the disk image
+        id: dmg
+        run: |
+          version="${TAG#v}"
+          dmg="Lolt-${version}-macos-universal.dmg"
+
+          staging="$RUNNER_TEMP/dmg"
+          mkdir -p "$staging"
+          cp -R "$RUNNER_TEMP/export/Lolt.app" "$staging/"
+          ln -s /Applications "$staging/Applications"
+
+          hdiutil create -volname "Lolt" -srcfolder "$staging" \
+            -ov -format UDZO "$dmg"
+          shasum -a 256 "$dmg" > "$dmg.sha256"
+          echo "dmg=$dmg" >> "$GITHUB_OUTPUT"
+
+      - name: Notarize and staple
+        if: env.HAS_NOTARIZATION == 'true'
+        env:
+          APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_TEAM_ID }}
+          DMG: ${{ steps.dmg.outputs.dmg }}
+        run: |
+          xcrun notarytool submit "$DMG" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG"
+
+          # The checksum changes once the ticket is stapled.
+          shasum -a 256 "$DMG" > "$DMG.sha256"
+
+      - name: Warn when the build is unsigned
+        if: env.HAS_SIGNING != 'true'
+        run: |
+          echo "::warning::Published unsigned (ad-hoc). Users must right-click → Open, or run 'xattr -dr com.apple.quarantine /Applications/Lolt.app'. Add the MACOS_* secrets to sign and notarize — see macos/README.md."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lolt-macos-app
+          path: |
+            ${{ steps.dmg.outputs.dmg }}
+            ${{ steps.dmg.outputs.dmg }}.sha256
+          if-no-files-found: error
+
   publish:
     name: Publish release
-    needs: build
+    needs: [build, macos-app]
     runs-on: ubuntu-latest
     permissions:
       contents: write

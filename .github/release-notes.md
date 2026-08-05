@@ -1,4 +1,18 @@
-## Install
+## macOS app and widget
+
+`Lolt-<version>-macos-universal.dmg` contains the app and its Notification
+Center widget, universal for Apple silicon and Intel. Open the disk image, drag
+**Lolt** to Applications, and launch it once — then add the widget from
+Notification Center → **Edit Widgets**.
+
+If the build is unsigned, macOS will refuse the first launch. Right-click the
+app → **Open**, or clear the quarantine flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Lolt.app
+```
+
+## Command line
 
 Download the archive for your platform, unpack it, and put `lolt` on your PATH:
 

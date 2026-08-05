@@ -112,6 +112,44 @@ every setting below appears there.
    `"$SRCROOT/scripts/build-rust.sh"` with "Based on dependency analysis" off.
 6. Confirm both targets have **App Sandbox → Outgoing Connections (Client)** on.
 
+## Releasing
+
+Pushing a `v*` tag runs the `macOS app and widget (.dmg)` job in
+[`../.github/workflows/release.yml`](../.github/workflows/release.yml). It
+archives a universal Release build, verifies the app carries both architectures
+and has the widget embedded, wraps it in a drag-to-Applications disk image, and
+attaches `Lolt-<version>-macos-universal.dmg` to the GitHub release.
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+### Signing and notarization
+
+With no secrets configured the app is **ad-hoc signed**: it installs and runs,
+but macOS blocks the first launch until the user right-clicks → Open, or clears
+the quarantine flag. The job logs a warning saying so.
+
+Add these repository secrets and the same job signs with your Developer ID and
+notarizes with Apple, producing a DMG that opens without warnings:
+
+| Secret | What it is |
+| --- | --- |
+| `MACOS_CERTIFICATE` | Developer ID Application certificate, exported as `.p12` and base64-encoded: `base64 -i cert.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PASSWORD` | The password you set when exporting the `.p12` |
+| `MACOS_TEAM_ID` | Your 10-character Apple Developer team ID |
+| `MACOS_NOTARY_APPLE_ID` | Apple ID email for notarization |
+| `MACOS_NOTARY_PASSWORD` | An [app-specific password](https://support.apple.com/en-us/102654), not your Apple ID password |
+
+Signing switches on with `MACOS_CERTIFICATE` + `MACOS_TEAM_ID`; notarization
+additionally needs the two `MACOS_NOTARY_*` secrets. Anything less falls back to
+the ad-hoc path rather than failing the release.
+
+Before distributing, change `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` from
+`com.example.lolt.*` to a reverse-DNS name you own. If `exportArchive` reports a
+missing provisioning profile, register the bundle IDs (app and widget) in the
+Apple Developer portal and create a Developer ID profile for them.
+
 ## Troubleshooting
 
 **`ld: library 'lolt_core' not found`** — the Rust build phase hasn't run.

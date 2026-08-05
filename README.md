@@ -136,9 +136,16 @@ field-by-field against serialised payloads, including nullability and the exact
 date format `JSONDecoder.iso8601` accepts.
 
 Tagging `v*` triggers
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds a
-Linux x86-64 binary and a universal macOS binary, packages them with checksums,
-and publishes a GitHub release:
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which
+publishes a GitHub release containing:
+
+- `lolt-linux-x86_64.tar.gz` — the CLI
+- `lolt-macos-universal.tar.gz` — the CLI, Apple silicon + Intel
+- `Lolt-<version>-macos-universal.dmg` — the app and Notification Center widget
+
+each with a `.sha256`. The DMG is ad-hoc signed unless Developer ID secrets are
+configured, in which case it is signed and notarized — see
+[macos/README.md](macos/README.md#signing-and-notarization).
 
 ```sh
 git tag v0.1.0 && git push origin v0.1.0
