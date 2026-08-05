@@ -73,20 +73,28 @@ jobs:
       - name: Build the static library
         run: cargo build --release --lib
 
-      - name: Check the exported symbols survived
+      # Informational only. nm's output format differs between platforms, so
+      # this is for reading in the log, never for gating — the link below is
+      # the check that means something.
+      - name: List exported symbols
+        continue-on-error: true
         run: |
-          for symbol in lolt_snapshot_json lolt_string_free lolt_version; do
-            if nm -g target/release/liblolt_core.a 2>/dev/null | grep -Eq "T _?${symbol}$"; then
-              echo "found $symbol"
-            else
-              echo "::error file=src/ffi.rs::$symbol is not exported from liblolt_core.a"
-              exit 1
-            fi
-          done
+          echo "--- nm -g ---"
+          nm -g target/release/liblolt_core.a 2>&1 | grep -E "lolt_(snapshot_json|string_free|version)" || true
+          echo "--- archive ---"
+          ls -la target/release/liblolt_core.a
 
+      # The real contract: every symbol the widget needs must resolve when a C
+      # translation unit links against the archive. tests/ffi_smoke.c references
+      # all three, so a missing or renamed export fails right here — exactly as
+      # the Xcode widget target would.
       - name: Link and run the smoke test
         run: |
-          cc tests/ffi_smoke.c -o ffi_smoke -L target/release -llolt_core ${{ matrix.libs }}
+          if ! cc tests/ffi_smoke.c -o ffi_smoke \
+               -L target/release -llolt_core ${{ matrix.libs }}; then
+            echo "::error file=src/ffi.rs::liblolt_core.a failed to link — a symbol is missing, or the system library list for ${{ matrix.os }} is wrong (see macos/project.yml OTHER_LDFLAGS)"
+            exit 1
+          fi
           ./ffi_smoke
 
   widget:

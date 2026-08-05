@@ -17,7 +17,21 @@ extern char *lolt_snapshot_json(const char *league, const char *team,
 extern void lolt_string_free(char *ptr);
 extern const char *lolt_version(void);
 
+/*
+ * Taking the address in a volatile global forces the linker to resolve
+ * lolt_snapshot_json at any optimisation level, without ever calling it —
+ * calling it would perform network I/O. If the symbol is missing from the
+ * archive, the link fails here.
+ */
+typedef char *(*lolt_snapshot_fn)(const char *, const char *, unsigned long long);
+static lolt_snapshot_fn volatile keep_snapshot_symbol = lolt_snapshot_json;
+
 int main(void) {
+    if (keep_snapshot_symbol == NULL) {
+        fprintf(stderr, "lolt_snapshot_json resolved to NULL\n");
+        return 1;
+    }
+
     const char *version = lolt_version();
     if (version == NULL || strlen(version) == 0) {
         fprintf(stderr, "lolt_version() returned nothing\n");
@@ -27,13 +41,6 @@ int main(void) {
 
     /* Freeing NULL must be a no-op. */
     lolt_string_free(NULL);
-
-    /* Referenced so the symbol has to resolve at link time, never called:
-       it would perform network I/O. */
-    if (version[0] == '\0') {
-        char *unreachable = lolt_snapshot_json(NULL, NULL, 1);
-        lolt_string_free(unreachable);
-    }
 
     printf("ok\n");
     return 0;
