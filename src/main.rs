@@ -1,11 +1,5 @@
 //! lolt — a League of Legends esports tracker for the terminal.
 
-mod api;
-mod commands;
-mod models;
-mod render;
-mod resolve;
-
 use std::io::IsTerminal;
 
 use anyhow::Result;
@@ -19,9 +13,10 @@ enum ColorMode {
     Never,
 }
 
-use crate::api::{Api, DEFAULT_API_KEY};
-use crate::commands::Ctx;
-use crate::render::Style;
+use lolt_core::api::{Api, DEFAULT_API_KEY};
+use lolt_core::commands::{self, Ctx};
+use lolt_core::render::Style;
+use lolt_core::snapshot;
 
 #[derive(Parser)]
 #[command(
@@ -116,6 +111,9 @@ enum Command {
 
     /// List the teams in the league's current split
     Teams,
+
+    /// Print the JSON payload the macOS widget renders (always JSON)
+    Snapshot,
 }
 
 fn main() {
@@ -160,5 +158,10 @@ fn run() -> Result<()> {
         Command::Live { all } => commands::live(&ctx, all),
         Command::Leagues { filter } => commands::leagues(&ctx, filter.as_deref()),
         Command::Teams => commands::teams(&ctx),
+        Command::Snapshot => {
+            let snap = snapshot::build(&ctx.api, &ctx.league_query, &ctx.team_query, 3, 5)?;
+            println!("{}", serde_json::to_string_pretty(&snap)?);
+            Ok(())
+        }
     }
 }

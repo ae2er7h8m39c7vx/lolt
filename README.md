@@ -1,6 +1,7 @@
 # lolt
 
-A League of Legends esports tracker for the terminal, written in Rust.
+A League of Legends esports tracker, written in Rust: a terminal CLI and a
+macOS widget that share one core.
 
 Defaults to the **LCK** and **T1** — running `lolt` with no arguments shows T1's
 league position, next fixtures and recent results.
@@ -43,6 +44,7 @@ lolt [OPTIONS] [COMMAND]
 | `live` | Matches in progress; `--all` for every league |
 | `leagues [FILTER]` | Every league the API knows, with its slug |
 | `teams` | Teams in the league's current split |
+| `snapshot` | The JSON payload the macOS widget renders |
 
 ### Options
 
@@ -79,6 +81,23 @@ export LOLT_LEAGUE=lec
 export LOLT_TEAM=g2-esports
 ```
 
+## macOS widget
+
+A WidgetKit widget lives in [macos/](macos/). It links the same Rust core as a
+static library through a small C ABI, so it can't drift from the CLI:
+
+```
+src/ffi.rs ──> liblolt_core.a ──> LoltCore.swift ──> Widget views
+```
+
+```sh
+brew install xcodegen
+cd macos && xcodegen generate && open Lolt.xcodeproj
+```
+
+See [macos/README.md](macos/README.md) for setup, sizes, refresh cadence and
+troubleshooting. `lolt snapshot` prints exactly what the widget decodes.
+
 ## Data
 
 Match, standings and roster data come from the public lolesports.com API
@@ -102,8 +121,12 @@ Layout:
 | File | Role |
 | --- | --- |
 | [src/main.rs](src/main.rs) | CLI definition and dispatch |
+| [src/lib.rs](src/lib.rs) | Core crate: `rlib` for the CLI, `staticlib` for the widget |
 | [src/api.rs](src/api.rs) | Blocking HTTP client, one method per endpoint |
 | [src/models.rs](src/models.rs) | Serde types for the API payloads |
 | [src/resolve.rs](src/resolve.rs) | League/team/split name resolution |
+| [src/snapshot.rs](src/snapshot.rs) | Shared view model both front-ends render |
+| [src/ffi.rs](src/ffi.rs) | C ABI consumed by the macOS widget |
 | [src/commands.rs](src/commands.rs) | One function per subcommand |
 | [src/render.rs](src/render.rs) | Colours, aligned tables, time formatting |
+| [macos/](macos/) | WidgetKit widget and container app |

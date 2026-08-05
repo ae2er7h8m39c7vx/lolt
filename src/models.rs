@@ -178,6 +178,8 @@ pub struct Team {
     #[serde(default)]
     pub code: String,
     #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
     pub status: Option<String>,
     #[serde(default)]
     pub home_league: Option<HomeLeague>,

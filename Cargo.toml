@@ -5,6 +5,12 @@ edition = "2021"
 description = "League of Legends esports tracker for the terminal"
 license = "MIT"
 
+[lib]
+name = "lolt_core"
+path = "src/lib.rs"
+# rlib for the CLI, staticlib for the macOS widget to link against.
+crate-type = ["rlib", "staticlib"]
+
 [[bin]]
 name = "lolt"
 path = "src/main.rs"

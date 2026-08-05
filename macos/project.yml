@@ -1,0 +1,99 @@
+# XcodeGen spec — run `xcodegen generate` in this directory to produce Lolt.xcodeproj.
+#
+#   brew install xcodegen && cd macos && xcodegen generate && open Lolt.xcodeproj
+#
+# The project is generated rather than checked in so there is no 6000-line
+# .pbxproj to merge. See README.md for the manual Xcode route.
+
+name: Lolt
+
+options:
+  bundleIdPrefix: com.example.lolt
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    # Set this (or pick a team in Xcode) if you want the widget to survive a
+    # reboot — ad-hoc signed extensions are unloaded aggressively.
+    # DEVELOPMENT_TEAM: ABCDE12345
+
+    # The C ABI from src/ffi.rs, exposed to Swift.
+    SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/Sources/Shared/include/lolt.h"
+
+    # liblolt_core.a, produced by scripts/build-rust.sh.
+    LIBRARY_SEARCH_PATHS:
+      - "$(inherited)"
+      - "$(SRCROOT)/../target/universal-apple-darwin/release"
+    # System libraries the Rust static library depends on. If linking fails
+    # with undefined symbols, get the authoritative list with:
+    #   cargo rustc --release --lib -- --print native-static-libs
+    OTHER_LDFLAGS:
+      - "$(inherited)"
+      - "-llolt_core"
+      - "-liconv"
+      - "-lc++"
+      - "-framework"
+      - "Security"
+      - "-framework"
+      - "CoreFoundation"
+      - "-framework"
+      - "SystemConfiguration"
+
+    # Xcode 15+ sandboxes run-script phases, which stops cargo writing to
+    # ../target. The Rust build phase needs this off.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  Lolt:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/App
+      - path: Sources/Shared
+    dependencies:
+      - target: LoltWidget
+        embed: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.lolt.app
+        PRODUCT_NAME: Lolt
+        CODE_SIGN_ENTITLEMENTS: Sources/App/Lolt.entitlements
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.sports
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        GENERATE_INFOPLIST_FILE: YES
+    preBuildScripts:
+      - name: Build Rust core
+        script: '"$SRCROOT/scripts/build-rust.sh"'
+        basedOnDependencyAnalysis: false
+
+  LoltWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: Sources/Widget
+      - path: Sources/Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.lolt.app.widget
+        PRODUCT_NAME: LoltWidget
+        CODE_SIGN_ENTITLEMENTS: Sources/Widget/LoltWidget.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Lolt
+        SKIP_INSTALL: YES
+    info:
+      path: Sources/Widget/Info.plist
+      properties:
+        CFBundleDisplayName: Lolt
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    preBuildScripts:
+      - name: Build Rust core
+        script: '"$SRCROOT/scripts/build-rust.sh"'
+        basedOnDependencyAnalysis: false
