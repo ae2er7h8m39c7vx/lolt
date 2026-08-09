@@ -27,5 +27,6 @@ Checksums are in the matching `.sha256` files.
 macOS builds are universal (Apple silicon + Intel) and unsigned — if Gatekeeper
 objects, clear the quarantine flag with `xattr -d com.apple.quarantine lolt`.
 
-The macOS widget is not distributed here; build it from source with Xcode, see
-[macos/README.md](macos/README.md).
+`--league` and `--team` complete against the live league and team lists; enable
+it with `source <(COMPLETE=zsh lolt)` in your shell rc (`bash` and `fish` work
+the same way).
