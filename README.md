@@ -72,6 +72,23 @@ lolt leagues emea               # leagues in a region
 lolt --json standings | jq .    # machine-readable output
 ```
 
+### Shell completion
+
+`-l/--league` and `-t/--team` complete against the live league list and the
+teams in the selected league's current split — `lolt -l lec -t <TAB>` offers
+LEC teams, by slug or by code (`g2<TAB>`, `kc<TAB>`). Register it once:
+
+```sh
+echo 'source <(COMPLETE=zsh lolt)'  >> ~/.zshrc     # zsh
+echo 'source <(COMPLETE=bash lolt)' >> ~/.bashrc    # bash
+echo 'COMPLETE=fish lolt | source'  >> ~/.config/fish/config.fish
+```
+
+Elvish and PowerShell work the same way. The candidate lists are cached under
+`$XDG_CACHE_HOME/lolt` (`~/Library/Caches/lolt` on macOS) — leagues for a week,
+each league's teams for twelve hours — so only the first TAB touches the
+network, and completion still works offline from the last copy.
+
 ### Changing the defaults
 
 Set them per shell instead of typing flags:
@@ -156,6 +173,7 @@ Layout:
 | File | Role |
 | --- | --- |
 | [src/main.rs](src/main.rs) | CLI definition and dispatch |
+| [src/complete.rs](src/complete.rs) | Shell completion for `--league`/`--team`, with its cache |
 | [src/lib.rs](src/lib.rs) | Core crate: `rlib` for the CLI, `staticlib` for the widget |
 | [src/api.rs](src/api.rs) | Blocking HTTP client, one method per endpoint |
 | [src/models.rs](src/models.rs) | Serde types for the API payloads |

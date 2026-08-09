@@ -1,9 +1,13 @@
 //! lolt — a League of Legends esports tracker for the terminal.
 
+mod complete;
+
 use std::io::IsTerminal;
 
 use anyhow::Result;
-use clap::{ArgAction, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, CommandFactory, Parser, Subcommand, ValueEnum};
+use clap_complete::engine::ArgValueCompleter;
+use clap_complete::CompleteEnv;
 
 #[derive(Clone, Copy, PartialEq, ValueEnum)]
 enum ColorMode {
@@ -36,11 +40,25 @@ use lolt_core::snapshot;
 )]
 struct Cli {
     /// League slug or name (lck, lpl, lec, lta_n, worlds, ...)
-    #[arg(short, long, global = true, env = "LOLT_LEAGUE", default_value = "lck")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        env = "LOLT_LEAGUE",
+        default_value = "lck",
+        add = ArgValueCompleter::new(complete::leagues)
+    )]
     league: String,
 
     /// Team slug, code or name (t1, geng, "Hanwha Life", ...)
-    #[arg(short, long, global = true, env = "LOLT_TEAM", default_value = "t1")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        env = "LOLT_TEAM",
+        default_value = "t1",
+        add = ArgValueCompleter::new(complete::teams)
+    )]
     team: String,
 
     /// Emit raw JSON instead of tables
@@ -117,6 +135,10 @@ enum Command {
 }
 
 fn main() {
+    // Answers the shell's completion requests (`COMPLETE=zsh lolt`) and exits;
+    // a normal run falls straight through.
+    CompleteEnv::with_factory(Cli::command).complete();
+
     if let Err(err) = run() {
         eprintln!("error: {err:#}");
         std::process::exit(1);
